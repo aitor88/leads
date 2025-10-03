@@ -4,6 +4,7 @@ import base64
 from PIL import Image
 import io
 import requests
+import re # Importar la librería de expresiones regulares
 
 # --- CONFIGURACIÓN ---
 # Estos valores se deben configurar de forma segura en Streamlit Community Cloud
@@ -45,16 +46,30 @@ def parse_ocr_data(text):
     email_regex = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     phone_regex = r'\+?[\d\s-()]{8,20}'
     
-    # Lógica de extracción (se puede mejorar)
+    # Usar re.search para encontrar patrones
     for line in lines:
-        if not data['email'] and (match := st.experimental_get_query_params().get('email_regex', [email_regex])[0] in line):
-            data['email'] = line
-        elif not data['telefono'] and (match := st.experimental_get_query_params().get('phone_regex', [phone_regex])[0] in line):
-            data['telefono'] = line
-        elif not data['nombre']:
-             data['nombre'] = line
+        email_match = re.search(email_regex, line)
+        if not data['email'] and email_match:
+            data['email'] = email_match.group(0)
+            continue
+
+        phone_match = re.search(phone_regex, line)
+        if not data['telefono'] and phone_match:
+            # Validar que es un número de teléfono plausible
+            if len(re.sub(r'\D', '', phone_match.group(0))) > 6:
+                data['telefono'] = phone_match.group(0).strip()
+                continue
+    
+    # Lógica simplificada para el resto de los campos
+    remaining_lines = [line for line in lines if line not in data.values()]
+    for line in remaining_lines:
+        if not data['nombre']:
+            data['nombre'] = line
         elif not data['empresa']:
-             data['empresa'] = line
+            data['empresa'] = line
+        elif not data['puesto']:
+            data['puesto'] = line
+
     return data
 
 # --- INTERFAZ DE LA APLICACIÓN ---
@@ -62,12 +77,12 @@ def parse_ocr_data(text):
 st.set_page_config(page_title="Captura de Leads", layout="centered")
 
 # Logo y Título
-st.image("https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png", width=100)
+st.image("[https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png](https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png)", width=100)
 st.title("Herramienta de Captura de Leads")
 
 # Obtener el nombre de usuario de la URL (ej: ?usuario=Aitor)
-query_params = st.experimental_get_query_params()
-usuario = query_params.get("usuario", ["No identificado"])[0]
+# Usar la nueva API st.query_params
+usuario = st.query_params.get("usuario", "No identificado")
 st.subheader(f"Usuario: {usuario}")
 
 if usuario == "No identificado":
@@ -115,8 +130,9 @@ with st.form(key="lead_form"):
     # Botón de envío del formulario
     submit_button = st.form_submit_button(label="Crear Lead en Odoo")
 
-# --- LÓGICA DE PROCESAMIENTO (se ejecuta cuando se pulsa el botón) ---
+# --- LÓGICA DE PROCESAMIENTO ---
 
+# Lógica del OCR (se ejecuta fuera del formulario para poder actualizar los campos)
 if uploaded_card is not None and 'ocr_run' not in st.session_state:
     with st.spinner("Procesando OCR..."):
         image_bytes = uploaded_card.getvalue()
@@ -131,7 +147,7 @@ if uploaded_card is not None and 'ocr_run' not in st.session_state:
                 'OCREngine': '2'
             }
             try:
-                response = requests.post('https://api.ocr.space/parse/image', files=files, data=payload, timeout=20)
+                response = requests.post('[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)', files=files, data=payload, timeout=20)
                 response.raise_for_status()
                 result = response.json()
                 
@@ -142,15 +158,17 @@ if uploaded_card is not None and 'ocr_run' not in st.session_state:
                     # Rellenar los campos con los datos del OCR
                     st.session_state.nombre = ocr_data.get('nombre', '')
                     st.session_state.empresa = ocr_data.get('empresa', '')
+                    st.session_state.puesto = ocr_data.get('puesto', '')
                     st.session_state.email = ocr_data.get('email', '')
                     st.session_state.telefono = ocr_data.get('telefono', '')
                     st.session_state.ocr_run = True # Marcar que el OCR ya se ejecutó
-                    st.experimental_rerun() # Volver a ejecutar el script para mostrar los datos
+                    st.rerun() # Volver a ejecutar el script para mostrar los datos
                 else:
                     st.warning(f"El OCR no pudo extraer texto. Error: {result.get('ErrorMessage', ['Desconocido'])[0]}")
             except requests.RequestException as e:
                 st.error(f"Error de conexión con el servicio de OCR: {e}")
 
+# Lógica del envío del formulario
 if submit_button:
     if not nombre or not empresa:
         st.error("Los campos 'Nombre Completo' y 'Empresa' son obligatorios.")
@@ -220,41 +238,10 @@ if submit_button:
 
                 st.success(f"¡Éxito! Lead '{lead_data['name']}' creado correctamente en Odoo con ID: {lead_id}")
                 st.balloons()
+                # Limpiar el estado para permitir un nuevo OCR
+                if 'ocr_run' in st.session_state:
+                    del st.session_state['ocr_run']
 
             except Exception as e:
                 st.error(f"Ha ocurrido un error al crear el lead en Odoo: {e}")
                 st.error("Verifica las credenciales en los 'Secrets' y que Odoo sea accesible.")
-```
-
-### **Cómo Ponerlo en Marcha (El Plan Definitivo)**
-
-**Paso 1: Preparar los Archivos en tu Ordenador**
-
-1.  Crea una nueva carpeta en tu ordenador, llámala `streamlit-app-odoo`.
-2.  Dentro, crea un archivo llamado `app.py` y pega el código de arriba.
-3.  En la misma carpeta, crea un archivo llamado `requirements.txt` y pega dentro estas tres líneas. Este archivo le dice a Streamlit qué librerías necesita instalar.
-    ```
-    streamlit
-    odoo-client-lib
-    requests
-    ```
-
-**Paso 2: Subir a GitHub**
-
-1.  Crea un **nuevo repositorio público** en GitHub.
-2.  Sube los dos archivos (`app.py` y `requirements.txt`) a ese repositorio.
-
-**Paso 3: Desplegar en Streamlit Community Cloud**
-
-1.  Ve a [**share.streamlit.io**](https://share.streamlit.io) e inicia sesión con tu cuenta de GitHub.
-2.  Haz clic en **"New app"**.
-3.  **Selecciona el repositorio** que acabas de crear.
-4.  Antes de darle a "Deploy", haz clic en el enlace **"Advanced settings..."**.
-5.  Aquí es donde pondremos las credenciales de forma segura. En el cuadro de texto **"Secrets"**, pega lo siguiente, reemplazando los valores con los tuyos:
-    ```toml
-    ODOO_HOSTNAME = "tu_dominio.odoo.com"
-    ODOO_DATABASE = "tu_base_de_datos"
-    ODOO_LOGIN = "tu_usuario_api"
-    ODOO_PASSWORD = "tu_contraseña_api"
-    OCR_API_KEY = "K85022997188957"
-    
