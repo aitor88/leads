@@ -77,7 +77,8 @@ def parse_ocr_data(text):
 st.set_page_config(page_title="Captura de Leads", layout="centered")
 
 # Logo y Título
-st.image("[https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png](https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png)", width=100)
+# CORRECCIÓN: Se pasa la URL directamente, sin formato Markdown.
+st.image("https://refricomp.com/wp-content/uploads/2025/09/Logo_Refri_cuadrado.png", width=100)
 st.title("Herramienta de Captura de Leads")
 
 # Obtener el nombre de usuario de la URL (ej: ?usuario=Aitor)
@@ -147,7 +148,8 @@ if uploaded_card is not None and 'ocr_run' not in st.session_state:
                 'OCREngine': '2'
             }
             try:
-                response = requests.post('[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)', files=files, data=payload, timeout=20)
+                # CORRECCIÓN: Se pasa la URL directamente, sin formato Markdown.
+                response = requests.post('https://api.ocr.space/parse/image', files=files, data=payload, timeout=20)
                 response.raise_for_status()
                 result = response.json()
                 
@@ -245,3 +247,4 @@ if submit_button:
             except Exception as e:
                 st.error(f"Ha ocurrido un error al crear el lead en Odoo: {e}")
                 st.error("Verifica las credenciales en los 'Secrets' y que Odoo sea accesible.")
+
